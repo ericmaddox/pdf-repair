@@ -337,6 +337,7 @@ def try_repair_file(src: Path):
     dst = safe_output_path(src)
 
     # Try each repair strategy in order until one succeeds
+    errors = []
     for strat_name, strat_func, loggers in STRATEGIES:
 
         def run():
@@ -357,9 +358,14 @@ def try_repair_file(src: Path):
 
         # Record error for this strategy attempt
         if exc is not None:
-            result["error"] = f"{type(exc).__name__}: {exc}"
+            errors.append(f"{strat_name}: {type(exc).__name__}: {exc}")
 
-    # All strategies failed
+    # All strategies failed - combine all error messages
+    if errors:
+        result["error"] = "All strategies failed. " + "; ".join(errors)
+    else:
+        result["error"] = "All strategies failed (no exceptions recorded)"
+    
     result["status"] = "FAILED"
     return result
 
@@ -405,6 +411,27 @@ def write_log_report(results, log_path: Path):
 # Entry point
 # ------------------------------------------------------------------------------------
 
+def check_available_tools():
+    """
+    Check which repair tools are available on the system.
+    
+    Returns:
+        List of available tool names
+    """
+    available = []
+    
+    if PdfReader is not None and PdfWriter is not None:
+        available.append("pypdf")
+    if fitz is not None:
+        available.append("pymupdf")
+    if shutil.which("qpdf"):
+        available.append("qpdf")
+    if shutil.which("gs") or shutil.which("ghostscript"):
+        available.append("ghostscript")
+    
+    return available
+
+
 def main():
     """
     Main entry point for the PDF repair tool.
@@ -412,6 +439,24 @@ def main():
     Scans the script directory recursively for PDF files, attempts to repair
     each one, and writes a comprehensive report to repair_report.log.
     """
+    # Check for available repair tools
+    available_tools = check_available_tools()
+    if not available_tools:
+        logger.error("No PDF repair tools are available!")
+        logger.error("")
+        logger.error("Please install at least one of the following:")
+        logger.error("  Python libraries:")
+        logger.error("    pip3 install pypdf")
+        logger.error("    pip3 install pymupdf")
+        logger.error("  Command-line tools (macOS):")
+        logger.error("    brew install qpdf")
+        logger.error("    brew install ghostscript")
+        logger.error("")
+        logger.error("After installing, run this script again.")
+        return
+    
+    logger.info(f"Available repair tools: {', '.join(available_tools)}")
+    
     script_dir = Path(__file__).parent.resolve()
     logger.info(f"Scanning directory: {script_dir}")
 
