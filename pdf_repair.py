@@ -22,6 +22,28 @@ import logging
 import shutil
 import subprocess
 import datetime
+import argparse
+import os
+import sys
+
+script_dir = Path(__file__).parent.resolve()
+parser = argparse.ArgumentParser(
+    prog='pdf_repair', description='Batch repair PDF files')
+parser.add_argument('directory', nargs='?')
+parser.add_argument('-f', '--file')
+
+arguments = parser.parse_args()
+
+# Preserve default behavior, normalize paths
+if arguments.file:
+    arguments.file = Path(arguments.file).resolve()
+if arguments.directory:
+    arguments.directory = Path(arguments.directory).resolve()
+elif arguments.file:
+    arguments.directory = arguments.file.parent.resolve()
+else:
+    # Default to previous behavior
+    arguments.directory = Path(__file__).parent.resolve()
 
 # Optional third-party library imports
 # These libraries are not required but provide additional repair capabilities
@@ -453,32 +475,37 @@ def main():
         logger.error("    brew install ghostscript")
         logger.error("")
         logger.error("After installing, run this script again.")
-        return
+        return 2
     
     logger.info(f"Available repair tools: {', '.join(available_tools)}")
-    
-    script_dir = Path(__file__).parent.resolve()
-    logger.info(f"Scanning directory: {script_dir}")
 
-    # Find all PDF files recursively in the script directory
-    pdfs = sorted(script_dir.rglob("*.pdf"))
-    if not pdfs:
-        logger.info("No PDFs found.")
-        return
+    if arguments.file:
+        pdfs = [arguments.file]
+    else:
+        logger.info(f"Scanning directory: {arguments.directory}")
+
+        # Find all PDF files recursively in the chosen directory
+        pdfs = sorted(arguments.directory.rglob("*.pdf"))
+        if not pdfs:
+            logger.info("No PDFs found.")
+            return 2
 
     results = []
+    all_succeeded = True
     logger.info(f"Found {len(pdfs)} PDFs. Starting repair...")
     for pdf in pdfs:
         logger.info(f"Processing {pdf}")
         info = try_repair_file(pdf)
         results.append(info)
         logger.info(f"  → {info['status']} (strategy={info['strategy']})")
+        if info['status'] == "FAILED":
+            all_succeeded = False
 
     # Write comprehensive report to log file
-    log_file = script_dir / "repair_report.log"
+    log_file = arguments.directory / "repair_report.log"
     write_log_report(results, log_file)
     logger.info(f"\nLog written to: {log_file}\n")
-
+    return (0 if all_succeeded else 1)
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
